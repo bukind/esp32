@@ -11,12 +11,12 @@
 
 static const char *TAG = "weather";
 
-#define I2C_MASTER_SCL_IO           9 // was CONFIG_I2C_MASTER_SCL /*!< GPIO number used for I2C master clock */
-#define I2C_MASTER_SDA_IO           8 // was CONFIG_I2C_MASTER_SDA /*!< GPIO number used for I2C master data  */
+#define I2C_MASTER_SCL_IO           CONFIG_I2C_MASTER_SCL /*!< GPIO number used for I2C master clock */
+#define I2C_MASTER_SDA_IO           CONFIG_I2C_MASTER_SDA /*!< GPIO number used for I2C master data  */
 #define I2C_MASTER_NUM              I2C_NUM_0                   /*!< I2C port number for master dev */
 #define I2C_MASTER_FREQ_HZ          CONFIG_I2C_MASTER_FREQUENCY /*!< I2C master clock frequency */
-#define I2C_MASTER_TX_BUF_DISABLE   0                           /*!< I2C master doesn't need buffer */
-#define I2C_MASTER_RX_BUF_DISABLE   0                           /*!< I2C master doesn't need buffer */
+// #define I2C_MASTER_TX_BUF_DISABLE   0                           /*!< I2C master doesn't need buffer */
+// #define I2C_MASTER_RX_BUF_DISABLE   0                           /*!< I2C master doesn't need buffer */
 
 // Most of the BME280 code is reverse-engineered from the https://github.com/periph/devices/tree/v3.7.4/bmxx80.
 
