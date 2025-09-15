@@ -6,8 +6,10 @@
 
 // BME280 Reader via I2C.
 
-#include "driver/i2c_master.h"
+#include "wificonn.h"
 #include "bme280.h"
+#include "driver/i2c_master.h"
+#include "nvs_flash.h"
 
 static const char *TAG = "weather";
 
@@ -51,6 +53,17 @@ static void i2c_master_deinit(i2c_master_bus_handle_t bus_handle, i2c_master_dev
 
 void app_main(void)
 {
+    // Initialize NVS.
+    // It seems to be a requirement for WiFi, though they don't tell it anywhere.
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+      ESP_ERROR_CHECK(nvs_flash_erase());
+      ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
+    wificonn_init_sta();
+
     i2c_master_bus_handle_t bus_handle;
     i2c_master_dev_handle_t dev_handle;
     i2c_master_init(&bus_handle, &dev_handle);
