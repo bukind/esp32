@@ -77,7 +77,7 @@ void app_main(void)
         return;
     }
 
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < 10; i++) {
         ESP_ERROR_CHECK(bme280_measure_once(sensor));
         usleep(1000000);
     }
@@ -85,4 +85,6 @@ void app_main(void)
     /* Demonstrate writing by halting the BME280 */
     ESP_ERROR_CHECK(bme280_halt(sensor));
     i2c_master_deinit(bus_handle, dev_handle);
+
+    wificonn_deinit();
 }
