@@ -9,7 +9,9 @@
 #include "wificonn.h"
 #include "bme280.h"
 #include "driver/i2c_master.h"
+#if WIFI_NVS_ENABLED
 #include "nvs_flash.h"
+#endif
 
 static const char *TAG = "weather";
 
@@ -53,6 +55,7 @@ static void i2c_master_deinit(i2c_master_bus_handle_t bus_handle, i2c_master_dev
 
 void app_main(void)
 {
+#if WIFI_NVS_ENABLED
     // Initialize NVS.
     // It seems to be a requirement for WiFi, though they don't tell it anywhere.
     esp_err_t ret = nvs_flash_init();
@@ -61,6 +64,9 @@ void app_main(void)
       ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+#else
+    ESP_LOGI(TAG, "skipping NVS initialization");
+#endif
 
     wificonn_init_sta();
 
