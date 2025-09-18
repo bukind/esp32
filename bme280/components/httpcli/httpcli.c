@@ -7,12 +7,20 @@ esp_err_t httpcli_event_handler(esp_http_client_event_t *evt) {
     switch(evt->event_id) {
     case HTTP_EVENT_ERROR:
         ESP_LOGI(TAG, "HTTP_EVENT_ERROR");
+        if (evt->data != NULL && evt->data_len != 0) {
+            ESP_LOGI(TAG, "HTTP_EVENT_ERROR data follows:");
+            ESP_LOG_BUFFER_HEX(TAG, evt->data, evt->data_len);
+        }
         break;
     case HTTP_EVENT_ON_CONNECTED:
         ESP_LOGI(TAG, "HTTP_EVENT_ON_CONNECTED");
         break;
     case HTTP_EVENT_HEADER_SENT:
         ESP_LOGI(TAG, "HTTP_EVENT_HEADER_SENT");
+        if (evt->data != NULL && evt->data_len != 0) {
+            ESP_LOGI(TAG, "HTTP_EVENT_HEADER_SENT data follows:");
+            ESP_LOG_BUFFER_HEX(TAG, evt->data, evt->data_len);
+        }
         break;
     case HTTP_EVENT_ON_HEADER:
         ESP_LOGI(TAG, "HTTP_EVENT_ON_HEADER, key=%s, value=%s", evt->header_key, evt->header_value);
@@ -55,10 +63,10 @@ esp_err_t httpcli_event_handler(esp_http_client_event_t *evt) {
         size_t copy_len = MIN(evt->data_len, user_data->buflen - user_data->gotlen);
         if (copy_len) {
             memcpy(user_data->buffer+user_data->gotlen, evt->data, copy_len);
-        }
-        user_data->gotlen += copy_len;
-        if (user_data->gotlen < user_data->buflen) {
-            user_data->buffer[user_data->gotlen] = '\0';
+            user_data->gotlen += copy_len;
+            if (user_data->gotlen < user_data->buflen) {
+                user_data->buffer[user_data->gotlen] = '\0';
+            }
         }
         break;
     case HTTP_EVENT_ON_FINISH:
@@ -94,6 +102,9 @@ esp_err_t httpcli_event_handler(esp_http_client_event_t *evt) {
         esp_http_client_set_header(evt->client, "From", "user@example.com");
         esp_http_client_set_header(evt->client, "Accept", "text/html");
         esp_http_client_set_redirection(evt->client);
+        break;
+    default:
+        ESP_LOGI(TAG, "UNKNOWN_EVENT %d", evt->event_id);
         break;
     }
     return ESP_OK;
