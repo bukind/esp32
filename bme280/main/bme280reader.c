@@ -40,7 +40,7 @@ void app_main(void)
     char response_buf[512+1];
     httpcli_user_data_t user_data = HTTPCLI_USER_DATA_INIT(response_buf, sizeof(response_buf));
     ESP_LOGI(TAG, "user_data has: buf=%x buflen=%d gotlen=%d", user_data.buffer, user_data.buflen, user_data.gotlen);
-    const char* url = "http://192.168.5.2:8080/tmp.txt";
+    const char* url = CONFIG_EXAMPLE_URL;
     esp_http_client_method_t method = HTTP_METHOD_GET;
     esp_http_client_config_t http_config = {
         .url = url,
