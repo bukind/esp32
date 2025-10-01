@@ -18,16 +18,38 @@ static const char *TAG = "weather";
 static char errbuf[64];
 #define DBGERR(err) err, esp_err_to_name_r(err, errbuf, sizeof(errbuf))
 
-#define STACK_SIZE 0x800
+#define PRODUCER_STACK_SIZE 0x800
+#define PRODUCER_PRIORITY 2
+#define CONSUMER_STACK_SIZE 0x800
+#define CONSUMER_PRIORITY 2
 
-static void producerTask(void *sensorParam) {
-    bme280_sensor_t *sensor = (bme280_sensor_t*)(sensorParam);
+typedef struct {
+} consumer_data_t;
+
+typedef struct {
+    bme280_sensor_t *sensor;
+    TaskHandle_t    consumer;
+} producer_data_t;
+
+static void producerTask(void *producerData) {
+    producer_data_t *data = (producer_data_t*)(producerData);
     const TickType_t readPeriod = 1000 / portTICK_PERIOD_MS;
     for (int i = 0; i < 100; i++) {
-        ESP_ERROR_CHECK(bme280_measure_once(*sensor));
+        ESP_ERROR_CHECK(bme280_measure_once(*data->sensor));
         vTaskDelay(readPeriod);
     }
     vTaskDelete(NULL); // delete itself.
+}
+
+static void consumerTask(void *consumerData) {
+    const TickType_t sendPeriod = 1000 / portTICK_PERIOD_MS;
+    consumer_data_t *data = (consumer_data_t*)(consumerData);
+    if (data == NULL) {
+        vTaskDelete(NULL);
+    }
+    for (;;) {
+        vTaskDelay(sendPeriod);
+    }
 }
 
 void app_main(void)
@@ -60,8 +82,17 @@ void app_main(void)
         return;
     }
 
+    TaskHandle_t consumerHandle = NULL;
+    consumer_data_t consumerData = {
+    };
+    xTaskCreate(consumerTask, "consumer", CONSUMER_STACK_SIZE, &consumerData, CONSUMER_PRIORITY, &consumerHandle);
+
     TaskHandle_t producerHandle = NULL;
-    xTaskCreate(producerTask, "producer", STACK_SIZE, &sensor, tskIDLE_PRIORITY, &producerHandle);
+    producer_data_t producerData = {
+        .sensor = &sensor,
+        .consumer = consumerHandle,
+    };
+    xTaskCreate(producerTask, "producer", PRODUCER_STACK_SIZE, &producerData, PRODUCER_PRIORITY, &producerHandle);
     if (producerHandle != NULL) {
         ESP_LOGI(TAG, "producer task is created");
     }
