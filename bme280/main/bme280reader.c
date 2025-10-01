@@ -18,6 +18,18 @@ static const char *TAG = "weather";
 static char errbuf[64];
 #define DBGERR(err) err, esp_err_to_name_r(err, errbuf, sizeof(errbuf))
 
+#define STACK_SIZE 0x800
+
+static void producerTask(void *sensorParam) {
+    bme280_sensor_t *sensor = (bme280_sensor_t*)(sensorParam);
+    const TickType_t readPeriod = 1000 / portTICK_PERIOD_MS;
+    for (int i = 0; i < 100; i++) {
+        ESP_ERROR_CHECK(bme280_measure_once(*sensor));
+        vTaskDelay(readPeriod);
+    }
+    vTaskDelete(NULL); // delete itself.
+}
+
 void app_main(void)
 {
 #if WIFI_NVS_ENABLED
@@ -46,6 +58,12 @@ void app_main(void)
         ESP_LOGE(TAG, "Failed to initialize bme280: %d", err);
         bme280_i2c_master_deinit(bus_handle, dev_handle);
         return;
+    }
+
+    TaskHandle_t producerHandle = NULL;
+    xTaskCreate(producerTask, "producer", STACK_SIZE, &sensor, tskIDLE_PRIORITY, &producerHandle);
+    if (producerHandle != NULL) {
+        ESP_LOGI(TAG, "producer task is created");
     }
 
     // HTTP Client.
@@ -80,13 +98,7 @@ void app_main(void)
     ESP_LOGI(TAG, "user_data has: buf=%x buflen=%d gotlen=%d", user_data.buffer, user_data.buflen, user_data.gotlen);
     ESP_LOG_BUFFER_HEX(TAG, user_data.buffer, user_data.gotlen);
 
-    /*
-    for (int i = 0; i < 10; i++) {
-        ESP_ERROR_CHECK(bme280_measure_once(sensor));
-        usleep(1000000);
-    }
-     */
-    sleep(10);
+    sleep(100);
 
     // Reset the response.
     user_data.gotlen = 0;
