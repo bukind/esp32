@@ -22,33 +22,86 @@ static char errbuf[64];
 #define PRODUCER_PRIORITY 2
 #define CONSUMER_STACK_SIZE 0x800
 #define CONSUMER_PRIORITY 2
+#define DATABUFFER_SIZE 20
 
 typedef struct {
+    uint32_t *data;     // pointer to a data array
+    uint32_t buf_size;  // total size
+    uint32_t index;     // current index
+} databuffer_t;
+
+#define DATABUFFER_INC(x) if (++((x).index) >= (x).buf_size) { (x).index = 0; }
+
+typedef struct {
+    TaskHandle_t producer;
+    databuffer_t buffer;
 } consumer_data_t;
 
 typedef struct {
     bme280_sensor_t *sensor;
     TaskHandle_t    consumer;
+    databuffer_t buffer;
+    uint32_t     avail;
 } producer_data_t;
 
 static void producerTask(void *producerData) {
     producer_data_t *data = (producer_data_t*)(producerData);
     const TickType_t readPeriod = 1000 / portTICK_PERIOD_MS;
+
+    // Initial lock for the producer to sync the setup.
+    for (;;) {
+        uint32_t got = ulTaskNotifyTake(pdTRUE, readPeriod);
+        if (got != 0) {
+            break;
+        }
+    }
+    ESP_LOGI(TAG, "producer is unlocked.");
+
+    uint32_t min_avail = data->buffer.buf_size / 2;
     for (int i = 0; i < 100; i++) {
-        ESP_ERROR_CHECK(bme280_measure_once(*data->sensor));
+        if (data->avail > 0 ) {
+            ESP_ERROR_CHECK(bme280_measure_once(*data->sensor));
+            --data->avail;
+            ESP_LOGI(TAG, "store item#%d, avail=%d", data->buffer.index, data->avail);
+            DATABUFFER_INC(data->buffer);
+            xTaskNotifyGive(data->consumer);
+        }
+        if (data->avail <= min_avail) {
+            // ESP_LOGI(TAG, "producer -> consumer: 1");
+            // Quickly check if we have any return.
+            uint32_t gotBack = ulTaskNotifyTake(pdTRUE, 1);
+            if (gotBack != 0) {
+                ESP_LOGI(TAG, "producer <- consumer: %d", gotBack);
+                data->avail += gotBack;
+            }
+        }
         vTaskDelay(readPeriod);
     }
     vTaskDelete(NULL); // delete itself.
 }
 
 static void consumerTask(void *consumerData) {
-    const TickType_t sendPeriod = 1000 / portTICK_PERIOD_MS;
+    const TickType_t waitPeriod = 1000 / portTICK_PERIOD_MS;
     consumer_data_t *data = (consumer_data_t*)(consumerData);
     if (data == NULL) {
         vTaskDelete(NULL);
     }
     for (;;) {
-        vTaskDelay(sendPeriod);
+        uint32_t gotItems = ulTaskNotifyTake(pdTRUE, waitPeriod);
+        if (gotItems == 0) {
+            // Didn't get a notification.
+            continue;
+        }
+        ESP_LOGI(TAG, "consumer got %d items", gotItems);
+        // TODO: process them here.
+        for (uint32_t i = 0; i < gotItems; i++) {
+            ESP_LOGI(TAG, "processing item#%d", data->buffer.index);
+            DATABUFFER_INC(data->buffer);
+            // Return it back.
+            xTaskNotifyGive(data->producer);
+        }
+        // Extra wait to emulate the delay in the task.
+        vTaskDelay(waitPeriod * 2);
     }
 }
 
@@ -82,8 +135,14 @@ void app_main(void)
         return;
     }
 
+    uint32_t buffer[DATABUFFER_SIZE];
+
     TaskHandle_t consumerHandle = NULL;
     consumer_data_t consumerData = {
+        .producer = NULL,
+        .buffer.data = buffer,
+        .buffer.buf_size = sizeof(buffer)/sizeof(buffer[0]),
+        .buffer.index = 0,
     };
     xTaskCreate(consumerTask, "consumer", CONSUMER_STACK_SIZE, &consumerData, CONSUMER_PRIORITY, &consumerHandle);
 
@@ -91,11 +150,18 @@ void app_main(void)
     producer_data_t producerData = {
         .sensor = &sensor,
         .consumer = consumerHandle,
+        .buffer.data = buffer,
+        .buffer.buf_size = sizeof(buffer)/sizeof(buffer[0]),
+        .buffer.index = 0,
+        .avail = sizeof(buffer)/sizeof(buffer[0]),
     };
     xTaskCreate(producerTask, "producer", PRODUCER_STACK_SIZE, &producerData, PRODUCER_PRIORITY, &producerHandle);
     if (producerHandle != NULL) {
         ESP_LOGI(TAG, "producer task is created");
     }
+    consumerData.producer = producerHandle;
+    // We can unblock the producer now.
+    xTaskNotifyGive(producerHandle);
 
     // HTTP Client.
     char response_buf[512+1];
