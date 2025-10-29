@@ -15,6 +15,8 @@
 #include "nvs_flash.h"
 #endif
 #include "httpcli.h"
+#include "esp_netif_sntp.h"
+#include "esp_sntp.h"
 
 static const char *TAG = "weather";
 
@@ -135,20 +137,34 @@ static void consumerTask(void *consumerData) {
 
 void app_main(void)
 {
+    esp_err_t err;
 #if WIFI_NVS_ENABLED
     // Initialize NVS.
     // It seems to be a requirement for WiFi, though they don't tell it anywhere.
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
       ESP_ERROR_CHECK(nvs_flash_erase());
-      ret = nvs_flash_init();
+      err = nvs_flash_init();
     }
-    ESP_ERROR_CHECK(ret);
+    ESP_ERROR_CHECK(err);
 #else
     ESP_LOGI(TAG, "skipping NVS initialization");
 #endif
 
     wificonn_init_sta();
+
+    // Set the system time.
+    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+    esp_netif_sntp_init(&config);
+    err = esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "cannot synchronize the system time: (%d) %s", DBGERR(err));
+        wificonn_deinit();
+        return;
+    }
+    char timebuf[40];
+    time_t curtime = time(NULL);
+    ESP_LOGI(TAG, "system time is set to %s", timestr(curtime, timebuf, sizeof(timebuf)));
 
     i2c_master_bus_handle_t bus_handle;
     i2c_master_dev_handle_t dev_handle;
@@ -156,7 +172,7 @@ void app_main(void)
     ESP_LOGI(TAG, "I2C initialized successfully");
 
     bme280_sensor_t sensor;
-    esp_err_t err = bme280_init(dev_handle, &sensor);
+    err = bme280_init(dev_handle, &sensor);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize bme280: %d", err);
         bme280_i2c_master_deinit(bus_handle, dev_handle);
