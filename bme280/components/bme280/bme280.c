@@ -231,7 +231,7 @@ static uint32_t bme280_compensate_humidity(bme280_calibration_t c, int32_t raw, 
 }
 
 // TOOD: pass struct to hold results.
-esp_err_t bme280_measure_once(bme280_sensor_t sensor) {
+esp_err_t bme280_measure_once(bme280_sensor_t sensor, bme280_readout_t *measurement) {
     uint8_t cmd[] = {
         BME280_REG_ADDR_CTRL_MEAS, sensor.tsamp<<5 | sensor.psamp<<2 | BME280_MODE_FORCED,
     };
@@ -262,5 +262,10 @@ esp_err_t bme280_measure_once(bme280_sensor_t sensor) {
         hum = bme280_compensate_humidity(sensor.cal, hraw, tfine);
     }
     ESP_LOGI(TAG, "measurement complete: T=%d P=%d H=%d", tcenticelsius/100, ppasc256/256, hum/1024);
+    if (measurement != NULL) {
+        measurement->celsius100 = tcenticelsius;
+        measurement->pascal256 = ppasc256;
+        measurement->relhum1024 = hum;
+    }
     return ESP_OK;
 }

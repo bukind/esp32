@@ -52,6 +52,12 @@ typedef struct {
     uint8_t                 filter;
 } bme280_sensor_t;
 
+typedef struct {
+    int32_t  celsius100;   // divide by 100 to get temperature in Celcius.
+    uint32_t pascal256;    // divide by 256 to get pressure in Pascals.
+    uint32_t relhum1024;   // divide by 1024 to get relative humidity in %.
+} bme280_readout_t;
+
 void bme280_i2c_master_init(i2c_master_bus_handle_t *bus_handle, i2c_master_dev_handle_t *dev_handle);
 
 void bme280_i2c_master_deinit(i2c_master_bus_handle_t bus_handle, i2c_master_dev_handle_t dev_handle);
@@ -60,7 +66,7 @@ esp_err_t bme280_halt(bme280_sensor_t sensor);
 
 esp_err_t bme280_init(i2c_master_dev_handle_t dev_handle, bme280_sensor_t *sensor);
 
-esp_err_t bme280_measure_once(bme280_sensor_t sensor);
+esp_err_t bme280_measure_once(bme280_sensor_t sensor, bme280_readout_t *measurement);
 
 #ifdef __cplusplus
 }

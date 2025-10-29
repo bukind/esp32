@@ -6,6 +6,9 @@
 
 // BME280 Reader via I2C.
 
+#include <time.h>
+#include <sys/time.h>
+#include <inttypes.h>
 #include "wificonn.h"
 #include "bme280.h"
 #if WIFI_NVS_ENABLED
@@ -25,9 +28,14 @@ static char errbuf[64];
 #define DATABUFFER_SIZE 20
 
 typedef struct {
-    uint32_t *data;     // pointer to a data array
-    uint32_t buf_size;  // total size
-    uint32_t index;     // current index
+    time_t           timestamp;
+    bme280_readout_t data;
+} readout_data_t;
+
+typedef struct {
+    readout_data_t *data;     // pointer to a data array
+    uint32_t       buf_size;  // total size
+    uint32_t       index;     // current index
 } databuffer_t;
 
 #define DATABUFFER_INC(x) if (++((x).index) >= (x).buf_size) { (x).index = 0; }
@@ -44,6 +52,13 @@ typedef struct {
     uint32_t     avail;
 } producer_data_t;
 
+static const char* timestr(time_t t, char *buf, size_t bufsize) {
+    struct tm timeinfo = {0};
+    localtime_r(&t, &timeinfo);
+    strftime(buf, bufsize, "%Y-%m-%d %H:%M:%S", &timeinfo);
+    return buf;
+}
+
 static void producerTask(void *producerData) {
     producer_data_t *data = (producer_data_t*)(producerData);
     const TickType_t readPeriod = 1000 / portTICK_PERIOD_MS;
@@ -55,14 +70,20 @@ static void producerTask(void *producerData) {
             break;
         }
     }
-    ESP_LOGI(TAG, "producer is unlocked.");
+    struct timeval tv = {0};
+    gettimeofday(&tv, NULL);
+    char timebuf[40];
+    ESP_LOGI(TAG, "producer is unlocked @ %s", timestr(tv.tv_sec, timebuf, sizeof(timebuf)));
 
     uint32_t min_avail = data->buffer.buf_size / 2;
     for (int i = 0; i < 100; i++) {
         if (data->avail > 0 ) {
-            ESP_ERROR_CHECK(bme280_measure_once(*data->sensor));
+            char timebuf[40];
+            readout_data_t *item = data->buffer.data + data->buffer.index;
+            ESP_ERROR_CHECK(bme280_measure_once(*data->sensor, &(item->data)));
+            item->timestamp = time(NULL);
             --data->avail;
-            ESP_LOGI(TAG, "store item#%d, avail=%d", data->buffer.index, data->avail);
+            ESP_LOGI(TAG, "store item#%d, @%s avail=%d", data->buffer.index, timestr(item->timestamp, timebuf, sizeof(timebuf)), data->avail);
             DATABUFFER_INC(data->buffer);
             xTaskNotifyGive(data->consumer);
         }
@@ -95,7 +116,14 @@ static void consumerTask(void *consumerData) {
         ESP_LOGI(TAG, "consumer got %d items", gotItems);
         // TODO: process them here.
         for (uint32_t i = 0; i < gotItems; i++) {
-            ESP_LOGI(TAG, "processing item#%d", data->buffer.index);
+            readout_data_t *item = data->buffer.data + data->buffer.index;
+            char timebuf[40];
+            ESP_LOGI(TAG, "processing item#%" PRIu32 ": %s T=%" PRId32 " P=%" PRIu32 " H=%" PRIu32,
+                     data->buffer.index,
+                     timestr(item->timestamp, timebuf, sizeof(timebuf)),
+                     item->data.celsius100/100,
+                     item->data.pascal256/256,
+                     item->data.relhum1024/1024);
             DATABUFFER_INC(data->buffer);
             // Return it back.
             xTaskNotifyGive(data->producer);
@@ -135,7 +163,7 @@ void app_main(void)
         return;
     }
 
-    uint32_t buffer[DATABUFFER_SIZE];
+    readout_data_t buffer[DATABUFFER_SIZE];
 
     TaskHandle_t consumerHandle = NULL;
     consumer_data_t consumerData = {
