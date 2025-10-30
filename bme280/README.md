@@ -1,38 +1,43 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C5 | ESP32-C6 | ESP32-C61 | ESP32-H2 | ESP32-H21 | ESP32-P4 | ESP32-S2 | ESP32-S3 |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | --------- | -------- | --------- | -------- | -------- | -------- |
+| Supported Targets | ESP32-C3 |
+| ----------------- | -------- |
 
-# Basic I2C Master Example
-
-(See the README.md file in the upper level 'examples' directory for more information about examples.)
+# Weather station
 
 ## Overview
 
-This example demonstrates basic usage of I2C driver by reading and writing from a I2C connected sensor:
+The bme280reader is a weather station unit to read temperature, pressure and relative humidity via BME280 sensor.
 
-If you have a new I2C application to go (for example, read the temperature data from external sensor with I2C interface), try this as a basic template, then add your own code.
+BME280 is connected to the ESP32-C3 via I2C bus.
+
+The data is sent to the HTTP server.
 
 ## How to use example
 
 ### Hardware Required
 
-To run this example, you should have an Espressif development board based on a chip listed in supported targets as well as a MPU9250. MPU9250 is a inertial measurement unit, which contains a accelerometer, gyroscope as well as a magnetometer, for more information about it, you can read the [datasheet of the MPU9250 sensor](https://invensense.tdk.com/wp-content/uploads/2015/02/PS-MPU-9250A-01-v1.1.pdf).
+To run this example, you should have an ESP32-C3 Supermini development board as well as BME280 sensor board.
 
-#### Pin Assignment
+### Configuration
 
 **Note:** The following pin assignments are used by default, you can change these in the `menuconfig` .
 
 |                  | SDA             | SCL           |
 | ---------------- | -------------- | -------------- |
 | ESP I2C Master   | I2C_MASTER_SDA | I2C_MASTER_SCL |
-| MPU9250 Sensor   | SDA            | SCL            |
+| BME280  Sensor   | SDA            | SCL            |
 
-For the actual default value of `I2C_MASTER_SDA` and `I2C_MASTER_SCL` see `Example Configuration` in `menuconfig`.
+For the actual default value of `I2C_MASTER_SDA` and `I2C_MASTER_SCL` see `I2C Configuration` in `menuconfig`.
 
 **Note:** There's no need to add an external pull-up resistors for SDA/SCL pin, because the driver will enable the internal pull-up resistors.
 
+It is also required to setup the WiFi parameters, as well as HTTP server URL.
+
+TODO: Add the description for that.
+
 ### Build and Flash
 
-Enter `idf.py -p PORT flash monitor` to build, flash and monitor the project.
+Enter `idf.py -p PORT flash monitor` to build, flash and monitor the
+project.  On my Rocky8 Linux machine the `PORT` value is `/dev/ttyACM0`.
 
 (To exit the serial monitor, type ``Ctrl-]``.)
 
@@ -41,11 +46,34 @@ See the [Getting Started Guide](https://docs.espressif.com/projects/esp-idf/en/l
 ## Example Output
 
 ```bash
-I (328) example: I2C initialized successfully
-I (338) example: WHO_AM_I = 71
-I (338) example: I2C de-initialized successfully
+I (256) phy_init: Saving new calibration data due to checksum failure or
+outdated calibration data, mode(2)
+I (256) wifi:mode : sta (XX:XX:XX:XX:XX:XX)
+...
+I (726) wifi:state: init -> auth (0xb0)
+I (766) wifi:state: auth -> assoc (0x0)
+I (776) wifi:state: assoc -> run (0x10)
+I (806) wifi:connected with XXXXXXX, aid = 2, channel 4, BW20, bssid = XX:XX:XX:XX:XX:XX
+I (806) wifi:security: WPA2-PSK, phy: bgn, rssi: -71
+...
+I (2486) wifi station: got ip:XXX.XXX.XXX.XXX
+I (2486) wifi station: connected to ap SSID:XXXXXXX password:*****
+I (5006) weather: system time is set to 2025-10-30 06:14:48
+I (5006) weather: I2C initialized successfully
+I (5006) bme280: WHO_AM_I = 60
+I (5016) bme280: Calibration is read
+I (5016) weather: producer task is created
+I (5016) weather: producer is unlocked @ 2025-10-30 06:14:48
+I (5016) weather: user_data has: buf=3fc9dedc buflen=513 gotlen=0
+I (5016) weather: Initialized HTTP client with user data @ 3fc9ded0
+I (5016) weather: set connection header: (0) ESP_OK
+I (5016) weather: set keep-alive header: (0) ESP_OK
+...
+I (5046) bme280: measurement complete: T=21 P=100361 H=64
+I (5046) weather: store item#0, @2025-10-30 06:14:48 avail=19
+...
 ```
 
 ## Troubleshooting
 
-(For any technical queries, please open an [issue](https://github.com/espressif/esp-idf/issues) on GitHub. We will get back to you as soon as possible.)
+At your own risk.
