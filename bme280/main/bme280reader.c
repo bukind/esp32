@@ -29,11 +29,14 @@ static char errbuf[64];
 #define CONSUMER_PRIORITY 2
 #define DATABUFFER_SIZE 20
 
+// The storage for one weather measurement: time + BME280 readout info.
 typedef struct {
     time_t           timestamp;
     bme280_readout_t data;
 } readout_data_t;
 
+// The ring buffer for the weather measurements.
+// Used to pass the measuments between the producer and the consumer tasks.
 typedef struct {
     readout_data_t *data;     // pointer to a data array
     uint32_t       buf_size;  // total size
@@ -42,11 +45,13 @@ typedef struct {
 
 #define DATABUFFER_INC(x) if (++((x).index) >= (x).buf_size) { (x).index = 0; }
 
+// The data passed into the consumer task.
 typedef struct {
     TaskHandle_t producer;
     databuffer_t buffer;
 } consumer_data_t;
 
+// The data passed into the producer task.
 typedef struct {
     bme280_sensor_t *sensor;
     TaskHandle_t    consumer;
@@ -54,6 +59,7 @@ typedef struct {
     uint32_t     avail;
 } producer_data_t;
 
+// Format the time t as a YYYY-MM-DD HH:MM:SS string in the provided buffer.
 static const char* timestr(time_t t, char *buf, size_t bufsize) {
     struct tm timeinfo = {0};
     localtime_r(&t, &timeinfo);
@@ -61,6 +67,13 @@ static const char* timestr(time_t t, char *buf, size_t bufsize) {
     return buf;
 }
 
+// The producer task.
+// *  Stays locked initially waiting for a direct to task message to proceed.
+//    This is needed to synchronize with the consumer task creation.
+// *  In a loop read measurements from BME280 sensor and pass them
+//    to the consumer task via the ring buffer.  The consumer is
+//    notified about the outstanding data via the direct to task notification.
+// *  TODO: work on the flag to exit the task gracefully.
 static void producerTask(void *producerData) {
     producer_data_t *data = (producer_data_t*)(producerData);
     const TickType_t readPeriod = 1000 / portTICK_PERIOD_MS;
@@ -103,6 +116,13 @@ static void producerTask(void *producerData) {
     vTaskDelete(NULL); // delete itself.
 }
 
+// The consumer task.
+// *  In a loop, waits for the direct to task notification
+//    from the producer.
+// *  When a notification is received, reads the measurement
+//    data from the ring buffer.
+// *  TODO: send the data to the HTTP server.
+// *  TODO: work on the flag to exit the task gracefully.
 static void consumerTask(void *consumerData) {
     const TickType_t waitPeriod = 1000 / portTICK_PERIOD_MS;
     consumer_data_t *data = (consumer_data_t*)(consumerData);
@@ -135,36 +155,9 @@ static void consumerTask(void *consumerData) {
     }
 }
 
-void app_main(void)
-{
+// Proceed processing after WiFi is initialized.
+void proceed_after_wifi(void) {
     esp_err_t err;
-#if WIFI_NVS_ENABLED
-    // Initialize NVS.
-    // It seems to be a requirement for WiFi, though they don't tell it anywhere.
-    err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-      ESP_ERROR_CHECK(nvs_flash_erase());
-      err = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(err);
-#else
-    ESP_LOGI(TAG, "skipping NVS initialization");
-#endif
-
-    wificonn_init_sta();
-
-    // Set the system time.
-    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
-    esp_netif_sntp_init(&config);
-    err = esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000));
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "cannot synchronize the system time: (%d) %s", DBGERR(err));
-        wificonn_deinit();
-        return;
-    }
-    char timebuf[40];
-    time_t curtime = time(NULL);
-    ESP_LOGI(TAG, "system time is set to %s", timestr(curtime, timebuf, sizeof(timebuf)));
 
     i2c_master_bus_handle_t bus_handle;
     i2c_master_dev_handle_t dev_handle;
@@ -208,6 +201,7 @@ void app_main(void)
     xTaskNotifyGive(producerHandle);
 
     // HTTP Client.
+    // TODO: move it to the consumer task.
     char response_buf[512+1];
     httpcli_user_data_t user_data = HTTPCLI_USER_DATA_INIT(response_buf, sizeof(response_buf));
     ESP_LOGI(TAG, "user_data has: buf=%x buflen=%d gotlen=%d", user_data.buffer, user_data.buflen, user_data.gotlen);
@@ -258,6 +252,41 @@ void app_main(void)
     // Halting the sensor.
     ESP_ERROR_CHECK(bme280_halt(sensor));
     bme280_i2c_master_deinit(bus_handle, dev_handle);
+}
 
+// Main entry point.
+void app_main(void)
+{
+    esp_err_t err;
+
+#if WIFI_NVS_ENABLED
+    // Initialize NVS.
+    // It seems to be a requirement for WiFi, though they don't tell it anywhere.
+    err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+      ESP_ERROR_CHECK(nvs_flash_erase());
+      err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(err);
+#else
+    ESP_LOGI(TAG, "skipping NVS initialization");
+#endif
+
+    wificonn_init_sta();
+
+    // Set the system time.
+    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+    esp_netif_sntp_init(&config);
+    err = esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "cannot synchronize the system time: (%d) %s", DBGERR(err));
+        wificonn_deinit();
+        return;
+    }
+    char timebuf[40];
+    time_t curtime = time(NULL);
+    ESP_LOGI(TAG, "system time is set to %s", timestr(curtime, timebuf, sizeof(timebuf)));
+
+    proceed_after_wifi();
     wificonn_deinit();
 }
